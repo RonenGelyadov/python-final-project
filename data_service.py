@@ -80,7 +80,7 @@ def analyze():
     stats = stats.sort_values("completion_precent", ascending=False)
 
     completion_avg = np.mean(stats["completion_precent"]).round(2)
-    completion_std = np.std(stats["completion_precent"])
+    completion_std = np.std(stats["completion_precent"]).round(2)
     below_avg = stats[stats["completion_precent"] < completion_avg]
 
     pivot = pd.pivot_table(
@@ -105,20 +105,10 @@ def analyze():
 
 
 def get_tasks_from_file():
-    try:
-        with open("tasks.json", "r") as f:
-            tasks = json.load(f)
-            print(tasks)
-            return tasks
-
-    except FileNotFoundError:
-        print("tasks.json was not found")
-        return None
-
-    except json.JSONDecodeError:
-        print("tasks.json contains invalid JSON")
-        return None
+    with open("tasks.json", "r") as f:
+        return json.load(f)
 
 
-def save_tasks_to_file():
-    pass
+def save_tasks_to_file(tasks):
+    with open("tasks.json", "w") as f:
+        json.dump(tasks, f, indent=4)

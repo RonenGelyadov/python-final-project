@@ -13,6 +13,7 @@ def fetch_json(path: str):
         response = requests.get(path, timeout=5)
         response.raise_for_status()
         return response.json()
+
     except requests.RequestException:
         return None
 
@@ -91,8 +92,6 @@ def analyze():
         aggfunc="count",
         fill_value=0,
     ).reset_index()
-
-    # print(stats)
 
     return {
         "merged": merged.to_dict(orient="records"),

@@ -67,6 +67,7 @@ def greet():
 def get_users():
     if not load_data():
         raise HTTPException(status_code=503, detail="Data source unavailable")
+
     return cache["users"].to_dict(orient="records")
 
 
@@ -100,14 +101,6 @@ def get_cities():
     return result["pivot"]
 
 
-# -------------------------------------------------------------------------------------------------
-# -------------------------------------------------------------------------------------------------
-# -------------------------------------------------------------------------------------------------
-# -------------------------------------------------------------------------------------------------
-# -------------------------------------------------------------------------------------------------
-# -------------------------------------------------------------------------------------------------
-
-
 @app.get("/tasks")
 def get_tasks():
     return get_tasks_from_file()
@@ -119,7 +112,7 @@ def add_task(task: TaskIn):
 
 
 @app.get("/tasks/overdue")
-def get_tasks():
+def get_tasks_overdue():
     pass
 
 
@@ -136,9 +129,20 @@ def get_task_by_id(task_id: int):
 
 @app.put("/tasks/{task_id}")
 def get_task_by_id(task_id: int):
-    pass
+    tasks = get_tasks_from_file()
 
 
 @app.delete("/tasks/{task_id}")
-def get_task_by_id(task_id: int):
-    pass
+def delete_task(task_id: int):
+    tasks = get_tasks_from_file()
+
+    deleted_task = next((t for t in tasks if t["id"] == task_id), None)
+
+    if deleted_task is None:
+        raise TaskNotFoundError(task_id)
+
+    tasks.remove(deleted_task)
+
+    save_tasks_to_file(tasks)
+
+    return deleted_task

@@ -1,1 +1,11 @@
-[]
+[
+    {
+        "id": 2,
+        "title": "Second Task",
+        "user_id": 139,
+        "due_date": "26.10.26",
+        "priority": 3,
+        "done": false,
+        "notes": ""
+    }
+]

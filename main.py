@@ -108,7 +108,30 @@ def get_tasks():
 
 @app.post("/tasks", response_model=TaskOut, status_code=201)
 def add_task(task: TaskIn):
-    return task
+    verified_title = task.title.strip()
+    if not verified_title:
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+
+    if not 1 <= task.priority <= 3:
+        raise HTTPException(
+            status_code=400, detail="Priority must be between 1 and 3")
+
+    tasks = get_tasks_from_file()
+    new_id = max((t["id"] for t in tasks), default=0) + 1
+
+    new_task = {
+        "id": new_id,
+        "title": verified_title,
+        "user_id": task.user_id,
+        "due_date": task.due_date,
+        "priority": task.priority,
+        "done": task.done,
+        "notes": task.notes if task.notes is not None else ""
+    }
+
+    tasks.append(new_task)
+    save_tasks_to_file(tasks)
+    return new_task
 
 
 @app.get("/tasks/overdue")

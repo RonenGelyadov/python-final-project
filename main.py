@@ -150,9 +150,33 @@ def get_task_by_id(task_id: int):
     raise TaskNotFoundError(task_id)
 
 
-@app.put("/tasks/{task_id}")
-def get_task_by_id(task_id: int):
+@app.put("/tasks/{task_id}", response_model=TaskOut)
+def edit_task(task_id: int, task: TaskIn):
+    verified_title = task.title.strip()
+    if not verified_title:
+        raise HTTPException(
+            status_code=400, detail="Title cannot be empty")
+
+    if not 1 <= task.priority <= 3:
+        raise HTTPException(
+            status_code=400, detail="Priority must be between 1 and 3")
+
     tasks = get_tasks_from_file()
+
+    edited_task = next((t for t in tasks if t["id"] == task_id), None)
+
+    if edited_task is None:
+        raise TaskNotFoundError(task_id)
+
+    edited_task["title"] = verified_title
+    edited_task["due_date"] = task.due_date
+    edited_task["priority"] = task.priority
+    edited_task["done"] = task.done
+    edited_task["notes"] = task.notes if task.notes is not None else ""
+
+    save_tasks_to_file(tasks)
+
+    return edited_task
 
 
 @app.delete("/tasks/{task_id}")

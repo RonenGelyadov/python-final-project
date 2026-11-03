@@ -1,6 +1,9 @@
+import os
 import json
-from fastapi import FastAPI, HTTPException, Request
+import time
+from fastapi import FastAPI, HTTPException, Request, Depends, Header
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import Optional
@@ -43,7 +46,7 @@ async def file_not_found_handler(req: Request, exc: FileNotFoundError):
 
 
 @app.exception_handler(json.JSONDecodeError)
-async def file_not_found_handler(req: Request, exc: json.JSONDecodeError):
+async def json_decode_error_handler(req: Request, exc: json.JSONDecodeError):
     return JSONResponse(
         status_code=503,
         content={"detail": "Data source is not valid JSON"},
@@ -51,11 +54,42 @@ async def file_not_found_handler(req: Request, exc: json.JSONDecodeError):
 
 
 @app.exception_handler(TaskNotFoundError)
-async def file_not_found_handler(req: Request, exc: TaskNotFoundError):
+async def task_not_found_handler(req: Request, exc: TaskNotFoundError):
     return JSONResponse(
         status_code=404,
         content={"detail": f"Task with id {exc.task_id} was not found"},
     )
+
+
+def pagination_params(skip: int = 0, limit: int = 100):
+    return {"skip": skip, "limit": limit}
+
+
+def verify_api_key(x_api_key: str = Header(...)):
+    if x_api_key != os.getenv("APP_API_KEY"):
+        raise HTTPException(status_code=401, detail="Invaild API key")
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173",
+                   "http://127.0.0.1:5173", "http://127.0.0.1:5500"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["*"]
+)
+
+
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    duration = time.time() - start_time
+    response.headers["X-process-Time"] = str(duration)
+
+    print(
+        f"Personal Log: {request.method} - {request.url} - {response.status_code}")
+
+    return response
 
 
 @app.get("/")
@@ -64,50 +98,100 @@ def greet():
 
 
 @app.get("/stats/users")
-def get_users():
+def get_users(pagination: dict = Depends(pagination_params)):
     if not load_data():
         raise HTTPException(status_code=503, detail="Data source unavailable")
 
-    return cache["users"].to_dict(orient="records")
+    users = cache["users"].to_dict(orient="records")
+
+    skip = pagination["skip"]
+    limit = pagination["limit"]
+
+    return {
+        "total": len(users),
+        "skip": skip,
+        "limit": limit,
+        "users": users[skip: skip + limit],
+    }
 
 
 @app.get("/stats/summary")
-def get_summary():
+def get_summary(pagination: dict = Depends(pagination_params)):
     result = analyze()
 
     if not result:
         raise HTTPException(status_code=503, detail="Data source unavailable")
 
-    return result
+    stats = result["stats"]
+
+    skip = pagination["skip"]
+    limit = pagination["limit"]
+
+    return {
+        "total": len(stats),
+        "skip": skip,
+        "limit": limit,
+        "stats": stats[skip: skip + limit],
+    }
 
 
 @app.get("/stats/low-performers")
-def get_low_performers():
+def get_low_performers(pagination: dict = Depends(pagination_params)):
     result = analyze()
 
     if not result:
         raise HTTPException(status_code=503, detail="Data source unavailable")
 
-    return result["below_avg"]
+    stats = result["below_avg"]
+
+    skip = pagination["skip"]
+    limit = pagination["limit"]
+
+    return {
+        "total": len(stats),
+        "skip": skip,
+        "limit": limit,
+        "stats": stats[skip: skip + limit],
+    }
 
 
 @app.get("/stats/cities")
-def get_cities():
+def get_cities(pagination: dict = Depends(pagination_params)):
     result = analyze()
 
     if not result:
         raise HTTPException(status_code=503, detail="Data source unavailable")
 
-    return result["pivot"]
+    cities = result["pivot"]
+
+    skip = pagination["skip"]
+    limit = pagination["limit"]
+
+    return {
+        "total": len(cities),
+        "skip": skip,
+        "limit": limit,
+        "cities": cities[skip: skip + limit],
+    }
 
 
 @app.get("/tasks")
-def get_tasks():
-    return get_tasks_from_file()
+def get_tasks(pagination: dict = Depends(pagination_params)):
+    tasks = get_tasks_from_file()
+
+    skip = pagination["skip"]
+    limit = pagination["limit"]
+
+    return {
+        "total": len(tasks),
+        "skip": skip,
+        "limit": limit,
+        "tasks": tasks[skip: skip + limit],
+    }
 
 
 @app.post("/tasks", response_model=TaskOut, status_code=201)
-def add_task(task: TaskIn):
+def add_task(task: TaskIn, api_key: str = Depends(verify_api_key)):
     verified_title = task.title.strip()
     if not verified_title:
         raise HTTPException(status_code=400, detail="Title cannot be empty")
@@ -135,8 +219,8 @@ def add_task(task: TaskIn):
 
 
 @app.get("/tasks/overdue")
-def get_tasks_overdue():
-    pass
+def get_tasks_overdue(pagination: dict = Depends(pagination_params)):
+    tasks = get_tasks_from_file()
 
 
 @app.get("/tasks/{task_id}")
@@ -151,7 +235,7 @@ def get_task_by_id(task_id: int):
 
 
 @app.put("/tasks/{task_id}", response_model=TaskOut)
-def edit_task(task_id: int, task: TaskIn):
+def edit_task(task_id: int, task: TaskIn, api_key: str = Depends(verify_api_key)):
     verified_title = task.title.strip()
     if not verified_title:
         raise HTTPException(
@@ -180,7 +264,7 @@ def edit_task(task_id: int, task: TaskIn):
 
 
 @app.delete("/tasks/{task_id}")
-def delete_task(task_id: int):
+def delete_task(task_id: int, api_key: str = Depends(verify_api_key)):
     tasks = get_tasks_from_file()
 
     deleted_task = next((t for t in tasks if t["id"] == task_id), None)
@@ -193,3 +277,8 @@ def delete_task(task_id: int):
     save_tasks_to_file(tasks)
 
     return deleted_task
+
+
+@app.post("/ai/ask")
+def ask_ai(prompt: str, conversation_id):
+    pass

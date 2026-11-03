@@ -1,13 +1,17 @@
 import os
 import json
 import time
+
 from fastapi import FastAPI, HTTPException, Request, Depends, Header
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import Optional
+
 from data_service import cache, load_data, analyze, get_tasks_from_file, save_tasks_to_file
+
+from ai_service import build_system_prompt
 
 load_dotenv()
 
@@ -279,6 +283,6 @@ def delete_task(task_id: int, api_key: str = Depends(verify_api_key)):
     return deleted_task
 
 
-@app.post("/ai/ask")
-def ask_ai(prompt: str, conversation_id):
-    pass
+@app.get("/ai/ask")
+def ask_ai():
+    return build_system_prompt()

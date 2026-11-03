@@ -7,6 +7,8 @@ BASE_URL = "https://jsonplaceholder.typicode.com"
 
 cache = {"users": None, "tasks": None}
 
+TASKS_FILE = "tasks.json"
+
 
 def fetch_json(path: str):
     try:
@@ -104,10 +106,10 @@ def analyze():
 
 
 def get_tasks_from_file():
-    with open("tasks.json", "r") as f:
+    with open(TASKS_FILE, "r") as f:
         return json.load(f)
 
 
 def save_tasks_to_file(tasks):
-    with open("tasks.json", "w") as f:
+    with open(TASKS_FILE, "w") as f:
         json.dump(tasks, f, indent=4)

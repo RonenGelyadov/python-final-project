@@ -8,10 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import Optional
+import anthropic
 
 from data_service import cache, load_data, analyze, get_tasks_from_file, save_tasks_to_file
-
-from ai_service import build_system_prompt
+from ai_service import ask, write_log
 
 load_dotenv()
 
@@ -34,6 +34,16 @@ class TaskOut(BaseModel):
     due_date: str
     priority: int
     done: bool
+
+
+class AskIn(BaseModel):
+    conversation_id: str
+    prompt: str
+
+
+class AskOut(BaseModel):
+    conversation_id: str
+    answer: str
 
 
 class TaskNotFoundError(Exception):
@@ -70,14 +80,13 @@ def pagination_params(skip: int = 0, limit: int = 100):
 
 
 def verify_api_key(x_api_key: str = Header(...)):
-    if x_api_key != os.getenv("APP_API_KEY"):
+    if x_api_key != os.environ.get("APP_API_KEY"):
         raise HTTPException(status_code=401, detail="Invaild API key")
 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173",
-                   "http://127.0.0.1:5173", "http://127.0.0.1:5500"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"]
 )
@@ -283,6 +292,37 @@ def delete_task(task_id: int, api_key: str = Depends(verify_api_key)):
     return deleted_task
 
 
-@app.get("/ai/ask")
-def ask_ai():
-    return build_system_prompt()
+@app.post("/ai/ask", response_model=AskOut)
+def ask_ai(body: AskIn):
+    status = "success"
+
+    prompt = body.prompt.strip()
+    prompt_length = len(prompt)
+
+    try:
+        if not prompt or prompt_length > 500:
+            raise HTTPException(
+                status_code=400, detail="Prompt must be 1-500 characters")
+
+        answer = ask(prompt, body.conversation_id)
+        return {"conversation_id": body.conversation_id, "answer": answer}
+
+    except HTTPException:
+        status = "bad_request"
+        raise
+
+    except anthropic.AuthenticationError:
+        status = "auth_error"
+        raise HTTPException(status_code=502, detail="Invalid API key")
+
+    except anthropic.APIError:
+        status = "service_error"
+        raise HTTPException(status_code=502, detail="AI service error")
+
+    except Exception:
+        status = "error"
+        raise HTTPException(
+            status_code=500, detail="AI model error or API key not valid")
+
+    finally:
+        write_log(prompt_length, status)

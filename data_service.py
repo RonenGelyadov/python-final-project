@@ -3,6 +3,7 @@ import json
 import pandas as pd
 import numpy as np
 
+
 BASE_URL = "https://jsonplaceholder.typicode.com"
 
 cache = {"users": None, "tasks": None}
@@ -113,3 +114,20 @@ def get_tasks_from_file():
 def save_tasks_to_file(tasks):
     with open(TASKS_FILE, "w") as f:
         json.dump(tasks, f, indent=4)
+
+
+def get_overdue_tasks(tasks):
+    if not tasks:
+        return []
+
+    df = pd.DataFrame(tasks)
+    df["due_date"] = pd.to_datetime(df["due_date"], format="%Y-%m-%d")
+
+    today = pd.Timestamp.today().normalize()
+    df["days_late"] = (today - df["due_date"]).dt.days
+
+    overdue = df[~(df["done"]) & (df["days_late"] > 0)].copy()
+    overdue = overdue.sort_values("days_late", ascending=False)
+
+    overdue["due_date"] = overdue["due_date"].dt.strftime("%Y-%m-%d")
+    return overdue.to_dict(orient="records")

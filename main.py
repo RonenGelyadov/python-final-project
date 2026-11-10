@@ -1,6 +1,7 @@
 import os
 import json
 import time
+from datetime import datetime, date
 
 from fastapi import FastAPI, HTTPException, Request, Depends, Header
 from fastapi.responses import JSONResponse
@@ -10,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 import anthropic
 
-from data_service import cache, load_data, analyze, get_tasks_from_file, save_tasks_to_file
+from data_service import cache, load_data, analyze, get_tasks_from_file, save_tasks_to_file, get_overdue_tasks
 from ai_service import ask, write_log
 
 load_dotenv()
@@ -213,6 +214,12 @@ def add_task(task: TaskIn, api_key: str = Depends(verify_api_key)):
         raise HTTPException(
             status_code=400, detail="Priority must be between 1 and 3")
 
+    try:
+        due_date = datetime.strptime(task.due_date, "%d/%m/%Y").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="Due date must be in format: dd/mm/yyyy")
+
     tasks = get_tasks_from_file()
     new_id = max((t["id"] for t in tasks), default=0) + 1
 
@@ -220,7 +227,7 @@ def add_task(task: TaskIn, api_key: str = Depends(verify_api_key)):
         "id": new_id,
         "title": verified_title,
         "user_id": task.user_id,
-        "due_date": task.due_date,
+        "due_date": due_date.isoformat(),
         "priority": task.priority,
         "done": task.done,
         "notes": task.notes if task.notes is not None else ""
@@ -234,6 +241,18 @@ def add_task(task: TaskIn, api_key: str = Depends(verify_api_key)):
 @app.get("/tasks/overdue")
 def get_tasks_overdue(pagination: dict = Depends(pagination_params)):
     tasks = get_tasks_from_file()
+
+    overdue = get_overdue_tasks(tasks)
+
+    skip = pagination["skip"]
+    limit = pagination["limit"]
+
+    return {
+        "total": len(overdue),
+        "skip": skip,
+        "limit": limit,
+        "tasks": overdue[skip: skip + limit],
+    }
 
 
 @app.get("/tasks/{task_id}")
@@ -258,6 +277,12 @@ def edit_task(task_id: int, task: TaskIn, api_key: str = Depends(verify_api_key)
         raise HTTPException(
             status_code=400, detail="Priority must be between 1 and 3")
 
+    try:
+        due_date = datetime.strptime(task.due_date, "%d/%m/%Y").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="Due date must be in format: dd/mm/yyyy")
+
     tasks = get_tasks_from_file()
 
     edited_task = next((t for t in tasks if t["id"] == task_id), None)
@@ -266,7 +291,7 @@ def edit_task(task_id: int, task: TaskIn, api_key: str = Depends(verify_api_key)
         raise TaskNotFoundError(task_id)
 
     edited_task["title"] = verified_title
-    edited_task["due_date"] = task.due_date
+    edited_task["due_date"] = due_date.isoformat()
     edited_task["priority"] = task.priority
     edited_task["done"] = task.done
     edited_task["notes"] = task.notes if task.notes is not None else ""
@@ -313,16 +338,16 @@ def ask_ai(body: AskIn):
 
     except anthropic.AuthenticationError:
         status = "auth_error"
-        raise HTTPException(status_code=502, detail="Invalid API key")
+        raise HTTPException(status_code=503, detail="Invalid API key")
 
     except anthropic.APIError:
         status = "service_error"
-        raise HTTPException(status_code=502, detail="AI service error")
+        raise HTTPException(status_code=503, detail="AI service error")
 
     except Exception:
         status = "error"
         raise HTTPException(
-            status_code=500, detail="AI model error or API key not valid")
+            status_code=500, detail="Internal error")
 
     finally:
         write_log(prompt_length, status)
